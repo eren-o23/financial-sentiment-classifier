@@ -1,0 +1,20 @@
+# Model weights (too large for git — use Git LFS or HuggingFace Hub)
+best_model.pt
+*.pt
+*.bin
+
+# Dataset (not redistributable — download separately)
+FinancialPhraseBank-v1.0/
+
+# Jupyter
+.ipynb_checkpoints/
+.virtual_documents/
+
+# macOS
+.DS_Store
+
+# Anaconda / Python
+anaconda_projects/
+__pycache__/
+*.pyc
+.env
