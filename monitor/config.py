@@ -35,7 +35,7 @@ RELEVANCE_THRESHOLD = 0.1
 # --- Divergence detection ---
 # A day is flagged when sentiment and price z-scores oppose in sign and both exceed
 # this magnitude. Tunable.
-DIVERGENCE_Z_THRESHOLD = 1.0
+DIVERGENCE_Z_THRESHOLD = 0.75
 # Z-scores are meaningless on tiny samples (with n=2 every point is exactly ±1σ), so
 # only compute divergences once we have at least this many paired observations.
 DIVERGENCE_MIN_OBS = 5
