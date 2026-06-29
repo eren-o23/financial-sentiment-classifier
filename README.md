@@ -2,8 +2,8 @@
 
 A two-part project:
 
-1. **The classifier** — a DistilBERT model fine-tuned on Financial PhraseBank for three-class sentiment on financial text, with a full evaluation against a general-purpose baseline.
-2. **The monitor** — a serving layer that pulls live news for a ticker, scores each headline with the classifier, and plots a daily sentiment index against price movement to **surface divergences between market language and price**. It is a monitoring tool, not a prediction tool: price is context for interpreting sentiment, not a target to forecast.
+1. **The classifier**, a DistilBERT model fine-tuned on Financial PhraseBank for three-class sentiment on financial text, with a full evaluation against a general-purpose baseline.
+2. **The monitor**, a serving layer that pulls live news for a ticker, scores each headline with the classifier, and plots a daily sentiment index against price movement to **surface divergences between market language and price**. It is a monitoring tool, not a prediction tool: price is context for interpreting sentiment, not a target to forecast.
 
 ---
 
@@ -80,9 +80,9 @@ Linear classification head (768 → 3)
 
 ### Why monitoring, not prediction
 
-Claiming a headline-sentiment model *predicts* price invites the obvious rebuttal: if it worked, everyone would already be doing it. So this tool doesn't predict. It **monitors** — it tracks how the language around a company shifts over time and uses price movement as *context* to interpret what it sees.
+Claiming a headline-sentiment model *predicts* price invites the obvious rebuttal: if it worked, everyone would already be doing it. So this tool doesn't predict. It **monitors**, it tracks how the language around a company shifts over time and uses price movement as *context* to interpret what it sees.
 
-The interesting output is the **divergences**: days where sentiment and price move in opposite directions. Negative language while the price rises often means the market had already priced in worse, or that positioning contradicts the news flow. Those mismatches are where the insight lives — the tool surfaces them and lets a human ask *why*, rather than emitting a prediction and asking you to trust it.
+The interesting output is the **divergences**: days where sentiment and price move in opposite directions. Negative language while the price rises often means the market had already priced in worse, or that positioning contradicts the news flow. Those mismatches are where the insight lives, the tool surfaces them and lets a human ask *why*, rather than emitting a prediction and asking you to trust it.
 
 ### How it works
 
@@ -125,7 +125,7 @@ uvicorn monitor.api:app --reload
 
 ### Honest limitation: train/inference domain shift
 
-The classifier was trained on **analyst-report sentences** ("Operating profit rose to EUR 11.2 mn from EUR 9.8 mn"), but news **headlines** are a different register — terser, present-tense, proper-noun heavy. The model is measurably less reliable on them: it scores *"Apple unveils record quarterly revenue beating estimates"* as negative, and *"Record quarterly revenue beats analyst estimates"* as neutral, while still nailing explicitly evaluative phrasing like *"Analysts upgrade Apple on strong demand"*.
+The classifier was trained on **analyst-report sentences** ("Operating profit rose to EUR 11.2 mn from EUR 9.8 mn"), but news **headlines** are a different register, terser, present-tense, proper-noun heavy. The model is measurably less reliable on them: it scores *"Apple unveils record quarterly revenue beating estimates"* as negative, and *"Record quarterly revenue beats analyst estimates"* as neutral, while still nailing explicitly evaluative phrasing like *"Analysts upgrade Apple on strong demand"*.
 
 This is exactly the domain-adaptation lesson from Part 1, observed in reverse: a model is only reliable on text that looks like its training distribution. The monitoring framing is robust to this (it reads a *trend* in sentiment, not a single label), but the right next step would be to fine-tune on a headline-labelled set or calibrate confidence thresholds before trusting day-level scores.
 
