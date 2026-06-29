@@ -6,11 +6,11 @@ Fine-tuned DistilBERT for three-class sentiment classification on financial anal
 
 ## The Problem
 
-A sentence like *"The company issued a profit warning ahead of Q3 results"* is unambiguously negative to anyone who reads earnings releases. A general-purpose sentiment model — trained on product reviews, tweets, and movie ratings — sees the word "profit" and hedges toward positive or neutral.
+A sentence like *"The company issued a profit warning ahead of Q3 results"* is unambiguously negative to anyone who reads earnings releases. A general-purpose sentiment model, trained on product reviews, tweets, and movie ratings, sees the word "profit" and hedges toward positive or neutral.
 
 This is the core failure mode of applying off-the-shelf NLP to finance: the domain has its own vocabulary, idioms, and framing conventions that general models haven't seen. Phrases like *"headwinds in the core segment"*, *"revenues declined in line with guidance"*, or *"the board remains cautious"* carry clear sentiment signals to a trained analyst that are invisible to a general model.
 
-This project fine-tunes DistilBERT on the **Financial PhraseBank** (Malo et al., 2013) — 3,453 sentences from analyst reports hand-labelled as **positive**, **negative**, or **neutral** by finance researchers — and proves the domain adaptation works by comparing against a VADER baseline.
+This project fine-tunes DistilBERT on the **Financial PhraseBank** (Malo et al., 2013), 3,453 sentences from analyst reports hand-labelled as **positive**, **negative**, or **neutral** by finance researchers, and proves the domain adaptation works by comparing against a VADER baseline.
 
 ---
 
@@ -18,7 +18,7 @@ This project fine-tunes DistilBERT on the **Financial PhraseBank** (Malo et al.,
 
 The model choice is deliberate. Qwen3, GPT-style models, and most frontier LLMs are **decoder-only** (autoregressive): they generate tokens one at a time, predicting each token from everything to its left. That's the right architecture for generation. It's wasteful for classification.
 
-**DistilBERT is encoder-only.** Its self-attention layers are bidirectional — every token attends to every other token simultaneously. This produces a rich, context-aware representation of the whole sentence captured in the `[CLS]` token, which a linear head maps directly to the three sentiment classes.
+**DistilBERT is encoder-only.** Its self-attention layers are bidirectional, every token attends to every other token simultaneously. This produces a rich, context-aware representation of the whole sentence captured in the `[CLS]` token, which a linear head maps directly to the three sentiment classes.
 
 DistilBERT is also 40% smaller and 60% faster than BERT while retaining 97% of its language understanding (Sanh et al., 2019). For a ~3,400 sentence dataset, that size is a feature — it reduces overfitting risk.
 
@@ -66,7 +66,7 @@ Linear classification head (768 → 3)
 
 - **Domain adaptation works**: +39.4 points macro F1 over VADER on the same test set — not a marginal improvement, a qualitative one.
 - **Negative class is the biggest win** (+0.591 F1): VADER correctly identifies only 28% of negative sentences; the fine-tuned model identifies 90%. Financial downside language ("tacked lower", "in stoppage", "non-responsive") has no signal in a general-domain lexicon.
-- **Hardest boundary is positive ↔ neutral** (24 of 36 errors): the model is reading factual sentences — turnarounds stated as number comparisons, partnerships described in neutral future tense — that the annotators marked positive from surrounding article context. The model only sees the sentence. This is an information problem, not a model problem.
+- **Hardest boundary is positive ↔ neutral** (24 of 36 errors): the model is reading factual sentences, turnarounds stated as number comparisons, partnerships described in neutral future tense, that the annotators marked positive from surrounding article context. The model only sees the sentence. This is an information problem, not a model problem.
 - **Neutral→negative errors** reveal domain mismatch in the opposite direction: sentences about physical events ("collisions started", "high winds toppled semi-trailers") are labelled neutral by finance annotators but the model correctly identifies them as negative in general register. The label reflects investor-perspective neutrality; the model learned general-register negativity.
 
 ---
@@ -104,4 +104,4 @@ financial-sentiment-classifier/
 
 ## Connection to AMD/HuggingFace Coursework
 
-This project extends the tokenization pipeline, embedding layers, and attention mechanisms covered in the AMD/HuggingFace course. The difference: instead of using pre-trained weights for inference, we fine-tune them — updating all 66M parameters of DistilBERT on domain-specific labelled data and plugging in a classification head at the `[CLS]` output.
+This project extends the tokenization pipeline, embedding layers, and attention mechanisms covered in the AMD/HuggingFace course. The difference: instead of using pre-trained weights for inference, we fine-tune them, updating all 66M parameters of DistilBERT on domain-specific labelled data and plugging in a classification head at the `[CLS]` output.
