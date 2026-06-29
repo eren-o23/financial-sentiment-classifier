@@ -5,6 +5,8 @@ The 255 MB model is loaded once at startup (lifespan) and reused across requests
 Endpoints:
   POST /monitor          -> JSON: sentiment_series, price_series, divergences, stats
   GET  /monitor/view     -> interactive Plotly HTML page
+  POST /eval             -> JSON: full eval report (accuracy, consistency, regression)
+  GET  /eval/history     -> JSON: past eval runs (regression trend)
   GET  /health           -> liveness check
 """
 from __future__ import annotations
@@ -15,6 +17,10 @@ from datetime import date, timedelta
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
+
+from eval_harness.config import GOLDEN_PATH
+from eval_harness.runner import run_eval
+from eval_harness.storage import fetch_history
 
 from .classifier import FinancialSentimentClassifier
 from .pipeline import run_monitor
@@ -92,3 +98,26 @@ def monitor_view(
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return HTMLResponse(content=figure_to_html(result))
+
+
+class EvalRequest(BaseModel):
+    golden_path: str = Field(
+        default=str(GOLDEN_PATH),
+        description="Path to the golden JSONL dataset. Defaults to the committed set.",
+    )
+
+
+@app.post("/eval")
+def eval_endpoint(req: EvalRequest = EvalRequest()) -> dict:
+    """Run the full eval (consistency + accuracy + regression) and persist it."""
+    try:
+        report = run_eval(_state["classifier"], golden_path=req.golden_path)
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return report.to_dict()
+
+
+@app.get("/eval/history")
+def eval_history(limit: int = Query(default=20, ge=1, le=200)) -> dict:
+    """Return past eval runs (newest first) to track performance over time."""
+    return {"runs": fetch_history(limit=limit)}

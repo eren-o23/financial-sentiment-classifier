@@ -23,3 +23,7 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
+
+# Eval harness intermediates (the golden set itself is committed; these regenerate)
+error_discovery_data/
+eval_harness/golden/headlines_export.jsonl

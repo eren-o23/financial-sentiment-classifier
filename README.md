@@ -131,6 +131,46 @@ This is exactly the domain-adaptation lesson from Part 1, observed in reverse: a
 
 ---
 
+## Part 3 — The Eval Harness
+
+Part 2 *asserts* a domain gap with anecdotes. Part 3 **measures** it, and makes that measurement repeatable so any future change to the model or inference pipeline can be regression-tested against a stable reference.
+
+### What it does
+
+Two checks against a committed **golden dataset** of 66 manually-labelled headlines:
+
+- **Consistency check** — scores each headline multiple times and verifies the label and confidence are stable across repeated runs *and* across batch sizes (single vs batched). The model is deterministic in `eval()` mode, so this is a guard: it catches accidental nondeterminism (dropout/sampling left on) or batch/padding bugs. Forcing the model into `train()` mode, for example, makes it fail loudly.
+- **Accuracy check** — compares predictions to ground truth and reports per-class precision/recall/F1 and macro F1, using the **same `sklearn.classification_report`** computation as the Part 1 notebook, so the numbers are directly comparable.
+
+A **regression runner** sits on top: every run is stored in SQLite (`eval_runs` table, alongside the headline cache), and each run is compared against the previous one. A macro-F1 drop beyond a configurable threshold (default 0.05) is flagged.
+
+### The headline domain gap, measured
+
+| Test set | Macro F1 |
+|----------|---------|
+| Part 1 — analyst-report sentences (notebook test split) | **0.872** |
+| Part 3 — news headlines (this golden set) | **0.848** |
+
+The classifier holds up better on headlines than the anecdotes suggest, but the ~2-point macro-F1 drop, and the specific misclassifications the harness surfaces, confirm the domain shift is real and now quantified rather than asserted.
+
+### How the golden dataset was built
+
+The 776 cached headlines (4 tickers) were exported to JSONL and run through an **error-analysis workflow** (clustering on TF-IDF + structured features, then a diversity-first stratified sample) to pick 66 headlines spanning all three classes, all four tickers, and the full confidence range, deliberately oversampling low-confidence and minority-class cases where ground truth is most likely to diverge from the model. Each was then **manually labelled** with ground truth in a lightweight review UI. The result is committed at `eval_harness/golden/golden_headlines.jsonl`.
+
+### Running the eval
+
+```bash
+# One-shot eval from the CLI (prints accuracy, macro F1, consistency, regression delta)
+python -m eval_harness.run_eval
+
+# Or via the API (same FastAPI app as the monitor)
+uvicorn monitor.api:app --reload
+#  POST /eval            -> full report: accuracy, per-class F1, consistency, misclassifications, regression delta
+#  GET  /eval/history    -> past runs, newest first (regression trend)
+```
+
+---
+
 ## How to Run
 
 ```bash
@@ -163,8 +203,19 @@ financial-sentiment-classifier/
 │   ├── divergence.py                       #   z-score alignment + divergence flagging
 │   ├── pipeline.py                         #   orchestration (cache-first)
 │   ├── viz.py                              #   Plotly dual-axis chart
-│   ├── api.py                              #   FastAPI service
+│   ├── api.py                              #   FastAPI service (monitor + eval endpoints)
 │   └── run_daily.py                        #   cron-ready CLI
+├── eval_harness/                           # Part 3: evaluation & regression testing
+│   ├── golden.py                           #   load golden dataset (JSONL)
+│   ├── consistency.py                      #   repeat-run + batch-invariance checks
+│   ├── accuracy.py                         #   per-class P/R/F1 vs ground truth (sklearn)
+│   ├── regression.py                       #   compare macro F1 vs previous run
+│   ├── storage.py                          #   eval_runs table (regression history)
+│   ├── runner.py                           #   orchestration -> EvalReport
+│   ├── run_eval.py                         #   CLI entry point
+│   ├── export_headlines.py                 #   dump headline_scores -> JSONL
+│   └── golden/
+│       └── golden_headlines.jsonl          #   66 manually-labelled headlines (committed)
 ├── requirements.txt
 ├── .env.example                            # ALPHA_VANTAGE_API_KEY
 ├── README.md
