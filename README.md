@@ -1,10 +1,15 @@
-# Financial Sentiment Classifier
+# Financial Sentiment Classifier & Monitor
 
-Fine-tuned DistilBERT for three-class sentiment classification on financial analyst reports.
+A two-part project:
+
+1. **The classifier** — a DistilBERT model fine-tuned on Financial PhraseBank for three-class sentiment on financial text, with a full evaluation against a general-purpose baseline.
+2. **The monitor** — a serving layer that pulls live news for a ticker, scores each headline with the classifier, and plots a daily sentiment index against price movement to **surface divergences between market language and price**. It is a monitoring tool, not a prediction tool: price is context for interpreting sentiment, not a target to forecast.
 
 ---
 
-## The Problem
+## Part 1 — The Classifier
+
+### The Problem
 
 A sentence like *"The company issued a profit warning ahead of Q3 results"* is unambiguously negative to anyone who reads earnings releases. A general-purpose sentiment model, trained on product reviews, tweets, and movie ratings, sees the word "profit" and hedges toward positive or neutral.
 
@@ -14,7 +19,7 @@ This project fine-tunes DistilBERT on the **Financial PhraseBank** (Malo et al.,
 
 ---
 
-## Architecture Decision: DistilBERT over Decoder Models
+### Architecture Decision: DistilBERT over Decoder Models
 
 The model choice is deliberate. Qwen3, GPT-style models, and most frontier LLMs are **decoder-only** (autoregressive): they generate tokens one at a time, predicting each token from everything to its left. That's the right architecture for generation. It's wasteful for classification.
 
@@ -38,7 +43,7 @@ Linear classification head (768 → 3)
 
 ---
 
-## Dataset
+### Dataset
 
 **Financial PhraseBank v1.0** (Malo et al., 2013)
 
@@ -50,7 +55,7 @@ Linear classification head (768 → 3)
 
 ---
 
-## Results
+### Results
 
 | Model | Positive F1 | Neutral F1 | Negative F1 | **Macro F1** |
 |-------|------------|-----------|------------|-------------|
@@ -62,7 +67,7 @@ Linear classification head (768 → 3)
 
 ---
 
-## Key Findings
+### Key Findings
 
 - **Domain adaptation works**: +39.4 points macro F1 over VADER on the same test set — not a marginal improvement, a qualitative one.
 - **Negative class is the biggest win** (+0.591 F1): VADER correctly identifies only 28% of negative sentences; the fine-tuned model identifies 90%. Financial downside language ("tacked lower", "in stoppage", "non-responsive") has no signal in a general-domain lexicon.
@@ -71,17 +76,76 @@ Linear classification head (768 → 3)
 
 ---
 
+## Part 2 — The Sentiment Monitor
+
+### Why monitoring, not prediction
+
+Claiming a headline-sentiment model *predicts* price invites the obvious rebuttal: if it worked, everyone would already be doing it. So this tool doesn't predict. It **monitors** — it tracks how the language around a company shifts over time and uses price movement as *context* to interpret what it sees.
+
+The interesting output is the **divergences**: days where sentiment and price move in opposite directions. Negative language while the price rises often means the market had already priced in worse, or that positioning contradicts the news flow. Those mismatches are where the insight lives — the tool surfaces them and lets a human ask *why*, rather than emitting a prediction and asking you to trust it.
+
+### How it works
+
+```
+Alpha Vantage news API  ──▶  dedup (SQLite)  ──▶  DistilBERT classifier
+        │                                                   │
+        ▼                                                   ▼
+   ticker headlines                              label + confidence per headline
+                                                            │
+                                                            ▼
+                                          daily sentiment index  (mean of sign×confidence)
+                                                            │
+   yfinance daily close ──────────────────────────────────┤
+                                                            ▼
+                              align on trading days  ──▶  z-score divergence flagging
+                                                            │
+                                                            ▼
+                                  FastAPI  ──▶  interactive Plotly dual-axis chart
+```
+
+- **Daily sentiment index**: each headline scores `sign(label) × confidence` (positive +1, neutral 0, negative −1); the day's index is the mean, a confidence-weighted net sentiment in roughly [−1, +1].
+- **Divergence detection**: sentiment and price-return series are z-scored over the window; a day is flagged when the two signs oppose and both magnitudes exceed 1σ (requires ≥5 paired observations so the z-scores are meaningful).
+- **Caching**: scored headlines are stored in SQLite keyed by URL, so re-runs never re-classify or waste the Alpha Vantage free-tier budget (25 requests/day).
+- **Serving**: the 255 MB model loads once at FastAPI startup and is reused across requests.
+
+### Running the monitor
+
+```bash
+pip install -r requirements.txt
+cp .env.example .env          # then add your free Alpha Vantage key
+
+# Ingest + score headlines for a ticker (cron-ready)
+python -m monitor.run_daily --ticker AAPL --start 2024-05-01 --end 2024-05-31
+
+# Serve the API + interactive chart
+uvicorn monitor.api:app --reload
+#  POST /monitor              -> JSON: sentiment_series, price_series, divergences
+#  GET  /monitor/view?ticker=AAPL&start=2024-05-01&end=2024-05-31&refresh=true
+```
+
+### Honest limitation: train/inference domain shift
+
+The classifier was trained on **analyst-report sentences** ("Operating profit rose to EUR 11.2 mn from EUR 9.8 mn"), but news **headlines** are a different register — terser, present-tense, proper-noun heavy. The model is measurably less reliable on them: it scores *"Apple unveils record quarterly revenue beating estimates"* as negative, and *"Record quarterly revenue beats analyst estimates"* as neutral, while still nailing explicitly evaluative phrasing like *"Analysts upgrade Apple on strong demand"*.
+
+This is exactly the domain-adaptation lesson from Part 1, observed in reverse: a model is only reliable on text that looks like its training distribution. The monitoring framing is robust to this (it reads a *trend* in sentiment, not a single label), but the right next step would be to fine-tune on a headline-labelled set or calibrate confidence thresholds before trusting day-level scores.
+
+---
+
 ## How to Run
 
 ```bash
-# Install dependencies
 pip install -r requirements.txt
-
-# Launch notebook
-jupyter lab financial_sentiment_classifier.ipynb
 ```
 
-Run all cells top-to-bottom. Training takes ~5–10 minutes on MPS (Apple Silicon) or CPU.
+**Part 1 — train/evaluate the classifier** (produces `best_model.pt`):
+```bash
+jupyter lab financial_sentiment_classifier.ipynb   # run all cells; ~5–10 min on MPS/CPU
+```
+
+**Part 2 — run the monitor** (needs `best_model.pt` + an Alpha Vantage key in `.env`):
+```bash
+uvicorn monitor.api:app --reload
+```
 
 ---
 
@@ -89,15 +153,23 @@ Run all cells top-to-bottom. Training takes ~5–10 minutes on MPS (Apple Silico
 
 ```
 financial-sentiment-classifier/
-├── financial_sentiment_classifier.ipynb   # Full pipeline: EDA → baseline → training → evaluation → error analysis
+├── financial_sentiment_classifier.ipynb   # Part 1: EDA → baseline → training → evaluation → error analysis
+├── monitor/                                # Part 2: sentiment monitoring system
+│   ├── classifier.py                       #   load checkpoint, score text (label + confidence)
+│   ├── news.py                             #   Alpha Vantage NEWS_SENTIMENT ingestion
+│   ├── prices.py                           #   yfinance daily prices
+│   ├── storage.py                          #   SQLite cache + dedup
+│   ├── aggregate.py                        #   daily sentiment index
+│   ├── divergence.py                       #   z-score alignment + divergence flagging
+│   ├── pipeline.py                         #   orchestration (cache-first)
+│   ├── viz.py                              #   Plotly dual-axis chart
+│   ├── api.py                              #   FastAPI service
+│   └── run_daily.py                        #   cron-ready CLI
 ├── requirements.txt
+├── .env.example                            # ALPHA_VANTAGE_API_KEY
 ├── README.md
-└── FinancialPhraseBank-v1.0/
-    ├── Sentences_75Agree.txt              # Used for training (3,453 sentences)
-    ├── Sentences_AllAgree.txt
-    ├── Sentences_66Agree.txt
-    ├── Sentences_50Agree.txt
-    └── README.txt
+└── FinancialPhraseBank-v1.0/               # training data (not redistributed)
+    └── Sentences_75Agree.txt               # used for training (3,453 sentences)
 ```
 
 ---

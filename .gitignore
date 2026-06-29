@@ -18,3 +18,8 @@ anaconda_projects/
 __pycache__/
 *.pyc
 .env
+
+# Monitor local storage
+*.db
+*.sqlite
+*.sqlite3
